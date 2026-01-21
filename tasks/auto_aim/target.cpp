@@ -19,7 +19,7 @@ Target::Target(
   t_(t),
   is_switch_(false),
   is_converged_(false),
-  switch_count_(0)
+  switch_count_(0),
   outpost_initialized(false),
   outpost_base_height(0.0),
   outpost_layer(0)
