@@ -241,6 +241,19 @@ AimPoint Aimer::choose_aim_point(const Target & target)
   Eigen::VectorXd ekf_x = target.ekf_x();
   std::vector<Eigen::Vector4d> armor_xyza_list = target.armor_xyza_list();
   auto armor_num = armor_xyza_list.size();
+
+   // === 修改：如果是前哨站，还原高度差 ===
+  if (target.name == ArmorName::outpost) {
+      // 前哨站只有3块板，EKF输出的 xyza_list 是基于 Layer 0 (基准高度) 的
+      // 我们需要把高度加回去，以便解算器算出正确的 Pitch
+      for (int i = 0; i < armor_num; i++) {
+          // 假设 i 对应 layer (0, 1, 2)
+          // OUTPOST_HEIGHT_DIFF = 0.10
+          armor_xyza_list[i][2] += i * target.OUTPOST_HEIGHT_DIFF; 
+      }
+  }
+  // ===================================
+
   // 如果装甲板未发生过跳变，则只有当前装甲板的位置已知
   if (!target.jumped) return {true, armor_xyza_list[0]};
 

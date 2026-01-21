@@ -20,6 +20,9 @@ Target::Target(
   is_switch_(false),
   is_converged_(false),
   switch_count_(0)
+  outpost_initialized(false),
+  outpost_base_height(0.0),
+  outpost_layer(0)
 {
   auto r = radius;
   priority = armor.priority;
@@ -137,6 +140,13 @@ void Target::predict(double dt)
 
 void Target::update(const Armor & armor)
 {
+    // === 修改：如果是前哨站，走特殊逻辑 ===
+  if (this->name == ArmorName::outpost) {
+      handle_outpost_update(armor);
+      return; // 前哨站逻辑处理完直接返回，跳过常规流程
+  }
+  // ===================================
+
   // 装甲板匹配
   int id;
   auto min_angle_error = 1e10;
@@ -183,6 +193,62 @@ void Target::update(const Armor & armor)
 
   update_ypda(armor, id);
 }
+
+// === 新增：前哨站处理逻辑 ===
+void Target::handle_outpost_update(const Armor & armor)
+{
+    // 前哨站只有3块板，这里假设 armor_num_ 已初始化为3
+    double current_z = armor.xyz_in_world[2];
+
+    // 1. 初始化基准高度 (简单的滑动窗口最小均值法)
+    if (!outpost_initialized) {
+        static std::vector<double> z_history;
+        z_history.push_back(current_z);
+        // 收集20帧数据来确定基准
+        if (z_history.size() > 20) {
+            // 假设最低的那个簇是 layer 0
+            outpost_base_height = *std::min_element(z_history.begin(), z_history.end());
+            outpost_initialized = true;
+            tools::logger()->info("[Target] Outpost initialized. Base Height: {:.3f}", outpost_base_height);
+        }
+        // 初始化阶段不修正，直接把当前当做 layer 0 (或者暂不 update EKF)
+        // 这里为了不断流，暂且认为它是 layer 0
+        update_ypda(armor, 0); 
+        return;
+    }
+
+    // 2. 判定当前是哪一层 (0, 1, 2)
+    // 计算当前高度相对于基准高度的倍数
+    double diff = current_z - outpost_base_height;
+    int layer = std::round(diff / OUTPOST_HEIGHT_DIFF);
+    // 钳制在 0~2 之间，防止异常噪声
+    layer = std::max(0, std::min(2, layer));
+    
+    // 更新状态供 Aimer 使用
+    this->outpost_layer = layer; 
+    
+    // 更新 ID 逻辑：前哨站螺旋上升，假设高度和ID绑定
+    // Layer 0 -> ID 0, Layer 1 -> ID 1, Layer 2 -> ID 2
+    // 更新 last_id 方便调试
+    if (layer != last_id) is_switch_ = true;
+    last_id = layer; 
+
+    // 3. *** 核心操作：修正观测值 ***
+    // 将当前观测到的装甲板，虚拟地“移动”回第 0 层的位置
+    // 这样 EKF 认为目标一直在同一高度旋转，Z 轴就不会因为切板而震荡
+    Armor virtual_armor = armor; 
+    virtual_armor.xyz_in_world[2] -= layer * OUTPOST_HEIGHT_DIFF; 
+    
+    // 重新计算 ypd (因为 z 变了，pitch 和 distance 也要变)
+    virtual_armor.ypd_in_world = tools::xyz2ypd(virtual_armor.xyz_in_world);
+
+    // 4. 将修正后的虚拟装甲板送入 EKF
+    update_ypda(virtual_armor, layer);
+    
+    update_count_++;
+}
+
+
 
 void Target::update_ypda(const Armor & armor, int id)
 {

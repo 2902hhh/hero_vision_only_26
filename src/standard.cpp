@@ -21,7 +21,7 @@
 
 using namespace std::chrono;
 
-// 1. 修改命令行参数，增加 display 选项，默认开启 (true)
+// 1. 命令行参数配置
 const std::string keys =
   "{help h usage ? |      | 输出命令行参数说明}"
   "{display d      | true | 是否显示视频流}" 
@@ -120,8 +120,26 @@ int main(int argc, char * argv[])
             }
             // 绘制中心点
             cv::circle(vis_img, armor.center, 3, cv::Scalar(0, 255, 0), -1);
-            // 显示装甲板名称
-            tools::draw_text(vis_img, auto_aim::ARMOR_NAMES[armor.name], armor.points[0], cv::Scalar(0, 255, 0), 0.8, 2);
+            
+            // 显示装甲板名称 / 前哨站层级
+            std::string text_info = auto_aim::ARMOR_NAMES[armor.name];
+            
+            // === 修改：前哨站层级显示 ===
+            if (armor.name == auto_aim::ArmorName::outpost && !targets.empty()) {
+                auto t = targets.front();
+                if (t.outpost_initialized) {
+                    // 反算当前是哪一层 (L0, L1, L2)
+                    double diff = armor.xyz_in_world[2] - t.outpost_base_height;
+                    // 0.10 是层间高度差
+                    int layer = std::round(diff / 0.10);
+                    text_info += fmt::format(" L{}", layer);
+                } else {
+                    text_info += " Init...";
+                }
+            }
+            // ============================
+
+            tools::draw_text(vis_img, text_info, armor.points[0], cv::Scalar(0, 255, 0), 0.8, 2);
         }
 
         // B. 绘制追踪预测结果 (黄色框)
@@ -129,36 +147,38 @@ int main(int argc, char * argv[])
             auto target = targets.front();
             
             // 获取目标所有装甲板的预测位置 (世界坐标系)
+            // 注意：target.armor_xyza_list() 返回的是 EKF 的状态。
+            // 对于前哨站，我们在 EKF 里抹平了高度差，所以这里拿到的 z 都是一样的（基准层）。
             std::vector<Eigen::Vector4d> predicted_armors = target.armor_xyza_list();
+            
+            // === 修改：前哨站预测高度还原 ===
+            // 为了在图像上正确画出螺旋上升的板子，我们需要手动把高度加回去
+            if (target.name == auto_aim::ArmorName::outpost) {
+                // 前哨站有3块板，ID 分别为 0, 1, 2
+                for(int i = 0; i < 3 && i < predicted_armors.size(); i++) {
+                    predicted_armors[i][2] += i * 0.10; // 还原 0cm, 10cm, 20cm 高度差
+                }
+            }
+            // ==================================
             
             for (const auto & xyza : predicted_armors) {
                 // 关键步骤：重投影 (Reprojection)
-                // 利用 PnP 的逆过程，将预测的世界坐标(3D) 映射回 图像像素坐标(2D)
                 auto image_points = solver.reproject_armor(
                     xyza.head(3), xyza[3], target.armor_type, target.name
                 );
                 
                 // 绘制预测框
                 tools::draw_points(vis_img, image_points, {0, 255, 255}, 2);
-
-                // // 2. 计算距离 (欧氏距离: sqrt(x^2 + y^2 + z^2))
-                // double distance = xyza.head(3).norm();
-
-                // // 3. 在装甲板上方显示距离
-                // // image_points[0] 通常是装甲板的左上角或某个角点，适合作为文本锚点
-                // if (!image_points.empty()) {
-                //     std::string dist_text = fmt::format("{:.2f}m", distance);
-                //     // 稍微向上偏移一点 (y - 20) 以免挡住框
-                //     cv::Point text_pos = image_points[0];
-                //     text_pos.y -= 20; 
-                    
-                //     tools::draw_text(vis_img, dist_text, text_pos, {0, 255, 255}, 0.6, 2);
-                // }
             }
 
             // 在左上角显示追踪状态
             std::string state_info = fmt::format("State: {} | ID: {}", tracker.state(), auto_aim::ARMOR_NAMES[target.name]);
             tools::draw_text(vis_img, state_info, {20, 80}, {0, 255, 255}, 1.0, 2);
+            
+            // 显示前哨站基准高度信息 (调试用)
+            if (target.name == auto_aim::ArmorName::outpost) {
+                 tools::draw_text(vis_img, fmt::format("Base H: {:.2f}m", target.outpost_base_height), {20, 110}, {0, 255, 255}, 0.8, 2);
+            }
         }
 
         // C. 绘制最终打击点 (红色十字)
@@ -167,20 +187,18 @@ int main(int argc, char * argv[])
             Eigen::Vector3d aim_xyz = aimer.debug_aim_point.xyza.head(3);
             
             // 同样使用重投影将其画在图上
-            // 这里的参数 0, small, outpost 只是为了借用函数接口，投影中心点
             auto aim_proj_points = solver.reproject_armor(aim_xyz, 0, auto_aim::ArmorType::small, auto_aim::ArmorName::outpost);
             
             // 计算投影矩形的中心
             cv::Point2f aim_center = (aim_proj_points[0] + aim_proj_points[2]) / 2;
             
             // 画红十字
-            cv::line(vis_img, {aim_center.x - 15, aim_center.y}, {aim_center.x + 15, aim_center.y}, {0, 0, 255}, 2);
-            cv::line(vis_img, {aim_center.x, aim_center.y - 15}, {aim_center.x, aim_center.y + 15}, {0, 0, 255}, 2);
+            cv::drawMarker(vis_img, aim_center, {0, 0, 255}, cv::MARKER_CROSS, 20, 3);
         }
 
         // D. 绘制 UI 信息
         tools::draw_text(vis_img, fmt::format("FPS: {:.1f}", fps), {20, 40}, {255, 255, 255}, 1.0, 2);
-        tools::draw_text(vis_img, fmt::format("Mode: {}", gimbal.str(mode)), {20, 120}, {255, 255, 255}, 1.0, 2);
+        tools::draw_text(vis_img, fmt::format("Mode: {}", gimbal.str(mode)), {20, 140}, {255, 255, 255}, 1.0, 2);
 
         // E. 显示图像 (缩小一半显示，防止超出屏幕)
         cv::resize(vis_img, vis_img, {}, 0.5, 0.5);

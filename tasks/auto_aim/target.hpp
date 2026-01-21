@@ -1,3 +1,4 @@
+// --- START OF FILE text/plain ---
 #ifndef AUTO_AIM__TARGET_HPP
 #define AUTO_AIM__TARGET_HPP
 
@@ -22,6 +23,13 @@ public:
   ArmorPriority priority;
   bool jumped;
   int last_id;  // debug only
+
+  // === 新增：前哨站专用变量 ===
+  bool outpost_initialized = false;
+  double outpost_base_height = 0.0; // 基准高度
+  int outpost_layer = 0; // 当前层级 (0, 1, 2)
+  const double OUTPOST_HEIGHT_DIFF = 0.10; // 层间高度差 10cm
+  // ==========================
 
   Target() = default;
   Target(
@@ -56,6 +64,9 @@ private:
   std::chrono::steady_clock::time_point t_;
 
   void update_ypda(const Armor & armor, int id);  // yaw pitch distance angle
+  
+  // === 新增：前哨站处理逻辑 ===
+  void handle_outpost_update(const Armor & armor);
 
   Eigen::Vector3d h_armor_xyz(const Eigen::VectorXd & x, int id) const;
   Eigen::MatrixXd h_jacobian(const Eigen::VectorXd & x, int id) const;
