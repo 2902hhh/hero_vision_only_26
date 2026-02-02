@@ -26,17 +26,51 @@ const std::vector<cv::Point3f> SMALL_ARMOR_POINTS{
 
 Solver::Solver(const std::string & config_path) : R_gimbal2world_(Eigen::Matrix3d::Identity())
 {
-  auto yaml = YAML::LoadFile(config_path);
+  auto yaml = tools::load(config_path);
 
-  auto R_gimbal2imubody_data = yaml["R_gimbal2imubody"].as<std::vector<double>>();
-  auto R_camera2gimbal_data = yaml["R_camera2gimbal"].as<std::vector<double>>();
-  auto t_camera2gimbal_data = yaml["t_camera2gimbal"].as<std::vector<double>>();
+  // === 修改：读取焦段模式 ===
+  std::string zoom_mode = "wide";
+  if (yaml["zoom_mode"]) {
+      zoom_mode = tools::read<std::string>(yaml, "zoom_mode");
+  }
+  std::string prefix = (zoom_mode == "tele") ? "tele_" : "wide_";
+  
+  tools::logger()->info("[Solver] Loading parameters for '{}' mode.", zoom_mode);
+
+  // 1. 读取外参 (Gimbal -> IMU) 通常是固定的
+  auto R_gimbal2imubody_data = tools::read<std::vector<double>>(yaml, "R_gimbal2imubody");
+  
+  // 2. 读取外参 (Camera -> Gimbal)
+  // 变焦镜头伸缩会导致重心变化甚至光心位置变化，严格来说 t_camera2gimbal 也会变
+  std::vector<double> R_camera2gimbal_data, t_camera2gimbal_data;
+  
+  // 尝试读取带前缀的参数，如果没有，回退到无前缀的
+  if (yaml[prefix + "R_camera2gimbal"]) {
+      R_camera2gimbal_data = tools::read<std::vector<double>>(yaml, prefix + "R_camera2gimbal");
+      t_camera2gimbal_data = tools::read<std::vector<double>>(yaml, prefix + "t_camera2gimbal");
+  } else {
+      R_camera2gimbal_data = tools::read<std::vector<double>>(yaml, "R_camera2gimbal");
+      t_camera2gimbal_data = tools::read<std::vector<double>>(yaml, "t_camera2gimbal");
+  }
+
+  // 3. 读取内参 (Camera Matrix & Distortion)
+  // 这是变焦后变化最大的部分，必须区分
+  std::vector<double> camera_matrix_data, distort_coeffs_data;
+  
+  if (yaml[prefix + "camera_matrix"]) {
+      camera_matrix_data = tools::read<std::vector<double>>(yaml, prefix + "camera_matrix");
+      distort_coeffs_data = tools::read<std::vector<double>>(yaml, prefix + "distort_coeffs");
+  } else {
+      // 兼容旧配置
+      camera_matrix_data = tools::read<std::vector<double>>(yaml, "camera_matrix");
+      distort_coeffs_data = tools::read<std::vector<double>>(yaml, "distort_coeffs");
+  }
+
+  // 矩阵赋值
   R_gimbal2imubody_ = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>(R_gimbal2imubody_data.data());
   R_camera2gimbal_ = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>(R_camera2gimbal_data.data());
   t_camera2gimbal_ = Eigen::Matrix<double, 3, 1>(t_camera2gimbal_data.data());
 
-  auto camera_matrix_data = yaml["camera_matrix"].as<std::vector<double>>();
-  auto distort_coeffs_data = yaml["distort_coeffs"].as<std::vector<double>>();
   Eigen::Matrix<double, 3, 3, Eigen::RowMajor> camera_matrix(camera_matrix_data.data());
   Eigen::Matrix<double, 1, 5> distort_coeffs(distort_coeffs_data.data());
   cv::eigen2cv(camera_matrix, camera_matrix_);
