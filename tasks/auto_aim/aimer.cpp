@@ -180,17 +180,17 @@ io::Command Aimer::aim(
   // 通常：向右跑，我们需要让 yaw 更小（更靠右）。如果打在左边，说明 yaw 还不够小。
   // 所以需要减去一个补偿值。
   
-  double dynamic_yaw_fix = 0.0;
-  if (yaw_vel < -0.1) { // 目标向右运动
-      // 补偿 0.5度 (约 0.008 rad)
-      // 这个值需要你实测微调：如果还是偏左，就加大；如果偏右了，就减小。
-      dynamic_yaw_fix = -1.6 / 57.3; 
-  } else if (yaw_vel > 0.1) { // 目标向左运动
-      // 如果向左本来就准，设为 0。如果向左打在右边(落后)，则需要加上一个正值。
-      dynamic_yaw_fix = 0.0; 
-  }
+  // double dynamic_yaw_fix = 0.0;
+  // if (yaw_vel < -0.1) { // 目标向右运动
+  //     // 补偿 0.5度 (约 0.008 rad)
+  //     // 这个值需要你实测微调：如果还是偏左，就加大；如果偏右了，就减小。
+  //     dynamic_yaw_fix = -1.6 / 57.3; 
+  // } else if (yaw_vel > 0.1) { // 目标向左运动
+  //     // 如果向左本来就准，设为 0。如果向左打在右边(落后)，则需要加上一个正值。
+  //     dynamic_yaw_fix = 0.0; 
+  // }
   
-  yaw += dynamic_yaw_fix;
+  // yaw += dynamic_yaw_fix;
   // ===============================================
 
 
@@ -254,6 +254,42 @@ AimPoint Aimer::choose_aim_point(const Target & target)
   }
   // ===================================
 
+    // === 前哨站锁定策略 ===
+  // if (target.name == ArmorName::outpost) {
+  //     // 策略：永远只瞄准 ID 0 (Layer 0)
+  //     // armor_xyza_list[0] 对应 ID 0
+      
+  //     // 1. 还原高度 (仅还原 ID 0)
+  //     // ID 0 通常是基准高度，offset = 0，不需要加
+  //     // 如果你想锁定 ID 1，就 armor_xyza_list[1][2] += 0.102;
+  //     Eigen::Vector4d target_armor = armor_xyza_list[0]; 
+      
+  //     // 2. 计算偏角
+  //     double center_yaw = std::atan2(ekf_x[2], ekf_x[0]);
+  //     double delta = tools::limit_rad(target_armor[3] - center_yaw);
+      
+  //     // 3. 判断是否在攻击范围内
+  //     // coming_angle / leaving_angle 决定了开火窗口
+  //     // 比如只在正对枪口 +/- 15度范围内开火
+  //     // 注意：这里我们返回 {true/false, 坐标}
+  //     // true 表示“建议开火/跟踪”，false 表示“不可见/不建议”
+      
+  //     // 如果偏角太大，虽然返回坐标让云台跟着转，但在 Shooter 里会被拦截不开火
+  //     // 为了让云台提前预瞄（守株待兔），我们应该始终返回 true，让云台指着它
+      
+  //     // 但是！如果板子转到背面去了，云台还跟着转会撞限位或者打到立柱。
+  //     // 所以策略是：
+  //     //   - 如果在视野内 (如 +/- 60度)，跟踪。
+  //     //   - 如果转出去了，瞄准一个“预瞄点”（比如进入侧）。
+      
+  //     // 简化版：全程跟踪 ID 0
+  //     return {true, target_armor};
+  // }
+
+
+
+
+
   // 如果装甲板未发生过跳变，则只有当前装甲板的位置已知
   if (!target.jumped) return {true, armor_xyza_list[0]};
 
@@ -299,8 +335,8 @@ AimPoint Aimer::choose_aim_point(const Target & target)
 
   double coming_angle, leaving_angle;
   if (target.name == ArmorName::outpost) {
-    coming_angle = 70 / 57.3;
-    leaving_angle = 30 / 57.3;
+    coming_angle = 70 / 57.3; //70
+    leaving_angle = 30 / 57.3; //30
   } else {
     coming_angle = comming_angle_;
     leaving_angle = leaving_angle_;

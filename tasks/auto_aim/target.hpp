@@ -28,7 +28,7 @@ public:
   bool outpost_initialized = false;
   double outpost_base_height = 0.0; // 基准高度
   int outpost_layer = 0; // 当前层级 (0, 1, 2)
-  const double OUTPOST_HEIGHT_DIFF = 0.10; // 层间高度差 10cm
+  static constexpr double OUTPOST_HEIGHT_DIFF = 0.10; // 层间高度差 10cm
   // ==========================
 
   Target() = default;
@@ -36,11 +36,11 @@ public:
     const Armor & armor, std::chrono::steady_clock::time_point t, double radius, int armor_num,
     Eigen::VectorXd P0_dig);
   Target(double x, double vyaw, double radius, double h);
-
+  void print_outpost_debug_info();
   void predict(std::chrono::steady_clock::time_point t);
   void predict(double dt);
   void update(const Armor & armor);
-
+  //void check_abnormal_state(const Armor & measurement, int layer);
   Eigen::VectorXd ekf_x() const;
   const tools::ExtendedKalmanFilter & ekf() const;
   std::vector<Eigen::Vector4d> armor_xyza_list() const;
