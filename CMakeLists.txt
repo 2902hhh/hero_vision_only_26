@@ -54,6 +54,14 @@ add_executable(calibrate_handeye calibration/calibrate_handeye.cpp)
 add_executable(calibrate_robotworld_handeye calibration/calibrate_robotworld_handeye.cpp)
 add_executable(split_video calibration/split_video.cpp)
 
+add_executable(ChessBoardCapture calibration/ChessBoardCapture.cpp)
+add_executable(ChessBoardCamera calibration/ChessBoardCamera.cpp)
+add_executable(ChessBoardHandEye calibration/ChessBoardHandEye.cpp)
+
+target_link_libraries(ChessBoardCapture ${OpenCV_LIBS} fmt::fmt tools io)
+target_link_libraries(ChessBoardCamera ${OpenCV_LIBS} fmt::fmt yaml-cpp tools)
+target_link_libraries(ChessBoardHandEye ${OpenCV_LIBS} fmt::fmt yaml-cpp tools)
+
 target_link_libraries(capture ${OpenCV_LIBS} fmt::fmt tools io)
 target_link_libraries(calibrate_camera ${OpenCV_LIBS} fmt::fmt yaml-cpp tools)
 target_link_libraries(calibrate_handeye ${OpenCV_LIBS} fmt::fmt yaml-cpp tools)
@@ -101,6 +109,15 @@ target_link_libraries(planner_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim too
 
 add_executable(planner_test_offline tests/planner_test_offline.cpp)
 target_link_libraries(planner_test_offline ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
+
+add_executable(bullet_detect tests/bullet_detect.cpp)
+target_link_libraries(bullet_detect
+    io
+    auto_aim
+    tools
+    ${OpenCV_LIBS}   # <--- 必须加上这个！
+    fmt::fmt         # <--- 必须加上这个！
+)
 
 # 检查 ROS 环境
 find_package(ament_cmake QUIET)
